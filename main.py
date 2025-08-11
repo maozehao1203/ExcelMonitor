@@ -2,9 +2,16 @@ import pandas as pd
 import json
 from pathlib import Path
 from datetime import datetime
+import sys
 
-# ---------- 0. 读取外部配置 ----------
-config_file = Path('./config/config.json')          # 与脚本同目录即可
+# ---------- 0. 获取程序根目录 ----------
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys.executable).parent      # PyInstaller 打包后的 .exe 所在目录
+else:
+    BASE_DIR = Path(__file__).parent            # 脚本运行时所在目录
+
+# ---------- 1. 读取外部配置 ----------
+config_file = BASE_DIR / 'config' / 'config.json'
 with open(config_file, 'r', encoding='utf-8') as f:
     cfg = json.load(f)
 
@@ -13,18 +20,18 @@ sheet_name = cfg['sheet_name']
 filter_groups = cfg['filter_groups']
 
 # ---------- 1. 读取 Excel ----------
-df = pd.read_excel(Path(path_url), sheet_name=sheet_name)
+df = pd.read_excel(BASE_DIR /Path(path_url), sheet_name=sheet_name,engine='calamine')
 
-
-# ---------- 2. 统一转字符串 ----------
+# ---------- 3. 统一转字符串 ----------
 cols_needed = {col for g in filter_groups for col in g["conditions"]}
 for col in cols_needed:
     if col in df.columns:
         df[col] = df[col].astype(str)
 
-# ---------- 3. 统计 ----------
+# ---------- 4. 统计 ----------
 today = datetime.now().strftime('%Y-%m-%d')
-output_file = Path('./result/filter_result.json')
+output_file = BASE_DIR / 'result' / 'filter_result.json'
+output_file.parent.mkdir(parents=True, exist_ok=True)  # 若 result 目录不存在则创建
 
 results = []
 for group in filter_groups:
@@ -41,7 +48,7 @@ for group in filter_groups:
     count = int(mask.sum())
     if skip_count < len(group["conditions"]):
         results.append({
-            "path_url": path_url,
+            "path_url": str(path_url),
             "sheet_name": sheet_name,
             "date": today,
             "tag": group["tag"],
@@ -52,7 +59,7 @@ for group in filter_groups:
     else:
         print("[FAILED]", "【tag:" + group["tag"] + "】", "all condition skipped,invalid query")
 
-# ---------- 4. 追加写并去重 ----------
+# ---------- 5. 追加写并去重 ----------
 if output_file.exists():
     with open(output_file, 'r', encoding='utf-8') as f:
         try:
@@ -67,7 +74,7 @@ else:
 history = [
     h for h in history
     if not (
-        h.get("path_url") == path_url and
+        h.get("path_url") == str(path_url) and
         h.get("date") == today and
         h.get("sheet_name") == sheet_name and
         h.get("tag") in {g["tag"] for g in filter_groups}
