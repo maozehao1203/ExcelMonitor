@@ -1,0 +1,81 @@
+import pandas as pd
+import json
+from pathlib import Path
+from datetime import datetime
+
+# ---------- 0. 读取外部配置 ----------
+config_file = Path('./config/config.json')          # 与脚本同目录即可
+with open(config_file, 'r', encoding='utf-8') as f:
+    cfg = json.load(f)
+
+path_url   = cfg['path_url']
+sheet_name = cfg['sheet_name']
+filter_groups = cfg['filter_groups']
+
+# ---------- 1. 读取 Excel ----------
+df = pd.read_excel(Path(path_url), sheet_name=sheet_name)
+
+
+# ---------- 2. 统一转字符串 ----------
+cols_needed = {col for g in filter_groups for col in g["conditions"]}
+for col in cols_needed:
+    if col in df.columns:
+        df[col] = df[col].astype(str)
+
+# ---------- 3. 统计 ----------
+today = datetime.now().strftime('%Y-%m-%d')
+output_file = Path('./result/filter_result.json')
+
+results = []
+for group in filter_groups:
+    mask = pd.Series([True] * len(df))
+    skip_count = 0
+    for col, vals in group["conditions"].items():
+        if col not in df.columns:
+            print("[FAILED]", "【tag:" + group["tag"] + "】", "column", col, "not exist,skip")
+            skip_count += 1
+            continue
+        vals = [str(v) for v in (vals if isinstance(vals, list) else [vals])]
+        mask &= df[col].isin(vals)
+        print("[SUCCEED]", "【tag:" + group["tag"] + "】", "column", col, "exist")
+    count = int(mask.sum())
+    if skip_count < len(group["conditions"]):
+        results.append({
+            "path_url": path_url,
+            "sheet_name": sheet_name,
+            "date": today,
+            "tag": group["tag"],
+            "filter_conditions": group["conditions"],
+            "matched_count": count
+        })
+        print("[SUCCEED]", "【tag:" + group["tag"] + "】", "count is", count)
+    else:
+        print("[FAILED]", "【tag:" + group["tag"] + "】", "all condition skipped,invalid query")
+
+# ---------- 4. 追加写并去重 ----------
+if output_file.exists():
+    with open(output_file, 'r', encoding='utf-8') as f:
+        try:
+            history = json.load(f)
+            if not isinstance(history, list):
+                history = [history]
+        except json.JSONDecodeError:
+            history = []
+else:
+    history = []
+
+history = [
+    h for h in history
+    if not (
+        h.get("path_url") == path_url and
+        h.get("date") == today and
+        h.get("sheet_name") == sheet_name and
+        h.get("tag") in {g["tag"] for g in filter_groups}
+    )
+]
+
+history.extend(results)
+with open(output_file, 'w', encoding='utf-8') as f:
+    json.dump(history, f, ensure_ascii=False, indent=2)
+
+print(f'[SUCCEED] 已处理 {len(filter_groups)} 组条件（支持多选），结果已追加至 {output_file}')
