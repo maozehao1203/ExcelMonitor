@@ -6,21 +6,21 @@ import sys
 
 # ---------- 0. 获取程序根目录 ----------
 if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(sys.executable).parent      # PyInstaller 打包后的 .exe 所在目录
+    BASE_DIR = Path(sys.executable).parent  # PyInstaller 打包后的 .exe 所在目录
 else:
-    BASE_DIR = Path(__file__).parent            # 脚本运行时所在目录
+    BASE_DIR = Path(__file__).parent  # 脚本运行时所在目录
 
 # ---------- 1. 读取外部配置 ----------
 config_file = BASE_DIR / 'config' / 'config.json'
 with open(config_file, 'r', encoding='utf-8') as f:
     cfg = json.load(f)
 
-path_url   = cfg['path_url']
+path_url = cfg['path_url']
 sheet_name = cfg['sheet_name']
 filter_groups = cfg['filter_groups']
 
 # ---------- 1. 读取 Excel ----------
-df = pd.read_excel(BASE_DIR /Path(path_url), sheet_name=sheet_name,engine='calamine')
+df = pd.read_excel(BASE_DIR / Path(path_url), sheet_name=sheet_name, engine='calamine')
 
 # ---------- 3. 统一转字符串 ----------
 cols_needed = {col for g in filter_groups for col in g["conditions"]}
@@ -74,10 +74,10 @@ else:
 history = [
     h for h in history
     if not (
-        h.get("path_url") == str(path_url) and
-        h.get("date") == today and
-        h.get("sheet_name") == sheet_name and
-        h.get("tag") in {g["tag"] for g in filter_groups}
+            h.get("path_url") == str(path_url) and
+            h.get("date") == today and
+            h.get("sheet_name") == sheet_name and
+            h.get("tag") in {g["tag"] for g in filter_groups}
     )
 ]
 
