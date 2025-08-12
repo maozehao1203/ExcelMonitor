@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import sys
+import yaml
 
 # ---------- 0. 获取程序根目录 ----------
 if getattr(sys, 'frozen', False):
@@ -10,16 +11,16 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = Path(__file__).parent  # 脚本运行时所在目录
 
-# ---------- 1. 读取外部配置 ----------
-config_file = BASE_DIR / 'config' / 'config.json'
+# ---------- 1. 读取外部 YAML 配置 ----------
+config_file = BASE_DIR / 'config' / 'config.yaml'   # 改成 .yaml
 with open(config_file, 'r', encoding='utf-8') as f:
-    cfg = json.load(f)
+    cfg = yaml.safe_load(f)       # 读取 YAML
 
 path_url = cfg['path_url']
 sheet_name = cfg['sheet_name']
 filter_groups = cfg['filter_groups']
 
-# ---------- 1. 读取 Excel ----------
+# ---------- 2. 读取 Excel ----------
 df = pd.read_excel(BASE_DIR / Path(path_url), sheet_name=sheet_name, engine='calamine')
 
 # ---------- 3. 统一转字符串 ----------

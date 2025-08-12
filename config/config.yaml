@@ -1,0 +1,11 @@
+path_url: "./示例文档.xlsx"
+sheet_name: "人员信息"
+filter_groups:
+  - tag: "已在职的男性员工"
+    conditions:
+      是否在职: ["是"]
+      性别: ["男"]
+  - tag: "已在职的女性员工"
+    conditions:
+      是否在职: ["是"]
+      性别: ["女"]
