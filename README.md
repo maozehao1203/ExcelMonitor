@@ -30,7 +30,7 @@ pip install pandas pyyaml plotly python-calamine
 
 用于记录配置，详情如下
 
-```json
+```yaml
 path_url: "./示例文档.xlsx"
 sheet_name: "人员信息"
 filter_groups:
