@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import pandas as pd
 import json
 from pathlib import Path
 from datetime import datetime
 import sys
 import yaml
+import hashlib
 
 # ---------- 0. 获取程序根目录 ----------
 if getattr(sys, 'frozen', False):
@@ -20,70 +23,148 @@ path_url = cfg['path_url']
 sheet_name = cfg['sheet_name']
 filter_groups = cfg['filter_groups']
 
-# ---------- 2. 读取 Excel ----------
-df = pd.read_excel(BASE_DIR / Path(path_url), sheet_name=sheet_name, engine='calamine')
+excel_path = BASE_DIR / Path(path_url)
+excel_stem = excel_path.stem
 
-# ---------- 3. 统一转字符串 ----------
-cols_needed = {col for g in filter_groups for col in g["conditions"]}
-for col in cols_needed:
-    if col in df.columns:
-        df[col] = df[col].astype(str)
+# ---------- 2. 工具 ----------
+def tag_sig(group: dict) -> str:
+    content = f"{group['tag']}:{json.dumps(group['conditions'], sort_keys=True)}"
+    return hashlib.md5(content.encode()).hexdigest()
 
-# ---------- 4. 统计 ----------
-today = datetime.now().strftime('%Y-%m-%d')
-output_file = BASE_DIR / 'result' / 'filter_result.json'
-output_file.parent.mkdir(parents=True, exist_ok=True)  # 若 result 目录不存在则创建
+# ---------- 3. 新的三级目录缓存 ----------
+pq_root = BASE_DIR / 'parquet_cache'
+today   = datetime.now().strftime('%Y-%m-%d')
 
-results = []
-for group in filter_groups:
-    mask = pd.Series([True] * len(df))
-    skip_count = 0
-    for col, vals in group["conditions"].items():
-        if col not in df.columns:
-            print("[FAILED]", "【tag:" + group["tag"] + "】", "column", col, "not exist,skip")
-            skip_count += 1
-            continue
-        vals = [str(v) for v in (vals if isinstance(vals, list) else [vals])]
-        mask &= df[col].isin(vals)
-        print("[SUCCEED]", "【tag:" + group["tag"] + "】", "column", col, "exist")
-    count = int(mask.sum())
-    if skip_count < len(group["conditions"]):
-        results.append({
-            "path_url": str(path_url),
-            "sheet_name": sheet_name,
-            "date": today,
-            "tag": group["tag"],
-            "filter_conditions": group["conditions"],
-            "matched_count": count
-        })
-        print("[SUCCEED]", "【tag:" + group["tag"] + "】", "count is", count)
-    else:
-        print("[FAILED]", "【tag:" + group["tag"] + "】", "all condition skipped,invalid query")
+with pd.ExcelFile(excel_path, engine='calamine') as xls:
+    all_sheets = xls.sheet_names
 
-# ---------- 5. 追加写并去重 ----------
-if output_file.exists():
-    with open(output_file, 'r', encoding='utf-8') as f:
-        try:
-            history = json.load(f)
-            if not isinstance(history, list):
-                history = [history]
-        except json.JSONDecodeError:
-            history = []
+# 需要处理的 sheet
+sheets_this_run = [sheet_name] if sheet_name else all_sheets
+
+for sht in sheets_this_run:
+    pq_dir  = pq_root / excel_stem / sht
+    pq_dir.mkdir(parents=True, exist_ok=True)
+    pq_file = pq_dir / f"{today}.parquet"
+
+    # 始终更新今天的缓存
+    df_sheet = pd.read_excel(excel_path, sheet_name=sht, engine='calamine')
+    for col in df_sheet.columns:
+        df_sheet[col] = df_sheet[col].astype(str)
+    df_sheet.to_parquet(pq_file, index=False)
+    print(f"[CACHE] 已更新 parquet：{pq_file}")
+
+# ---------- 4. 判断是否有新增/变更 tag ----------
+last_tags_file = BASE_DIR / 'config' / 'last_tags.yaml'
+last_tags = yaml.safe_load(open(last_tags_file, encoding='utf-8')) or {} \
+            if last_tags_file.exists() else {}
+
+changed_or_new_tags = {g["tag"] for g in filter_groups if tag_sig(g) not in last_tags}
+run_history = bool(changed_or_new_tags)   # 是否需要跑历史
+if run_history:
+    print("[INFO] 检测到新增/变更 tag，将补算历史日期")
+else:
+    print("[INFO] 无新增/变更 tag，仅计算今天")
+
+# ---------- 5. 找出同一表格、同一 sheet 的所有历史 parquet ----------
+target_sheets = [sheet_name] if sheet_name else all_sheets
+sheet_pq_map = {}            # {sheet: [(date, Path)]}
+for sht in target_sheets:
+    pq_dir = pq_root / excel_stem / sht
+    if not pq_dir.exists():
+        continue
+    pq_files = sorted(pq_dir.glob("*.parquet"))
+    sheet_pq_map[sht] = [(p.stem, p) for p in pq_files]
+
+if not sheet_pq_map:
+    print("[WARN] 找不到任何 parquet，请先确保 Excel 能被读取")
+    sys.exit(1)
+
+# ---------- 6. 结果文件 ----------
+out_file = BASE_DIR / 'result' / 'filter_result.json'
+out_file.parent.mkdir(parents=True, exist_ok=True)
+
+# 6.1 读历史
+if out_file.exists():
+    try:
+        history = json.load(open(out_file, encoding='utf-8'))
+        history = history if isinstance(history, list) else [history]
+    except json.JSONDecodeError:
+        history = []
 else:
     history = []
 
-history = [
-    h for h in history
-    if not (
+# 6.2 需要写入的新增/变更记录
+fresh_records = []
+
+def calc_for_date(df: pd.DataFrame, sheet_name: str, date_str: str, tag_set: set | None = None):
+    """
+    对给定日期数据计算过滤结果
+    :param tag_set: 只计算这些 tag；None 表示所有 filter_groups
+    """
+    for group in filter_groups:
+        if tag_set is not None and group["tag"] not in tag_set:
+            continue
+        mask = pd.Series([True] * len(df))
+        skip = 0
+        for col, vals in group["conditions"].items():
+            if col not in df.columns:
+                skip += 1
+                continue
+            vals = [str(v) for v in (vals if isinstance(vals, list) else [vals])]
+            mask &= df[col].isin(vals)
+        if skip == len(group["conditions"]):
+            continue
+        fresh_records.append({
+            "path_url": str(path_url),
+            "sheet_name": sheet_name,
+            "date": date_str,
+            "tag": group["tag"],
+            "filter_conditions": group["conditions"],
+            "matched_count": int(mask.sum())
+        })
+
+# （1）无论有没有新增/变更 tag，先算今天
+for sheet_name, date_path_list in sheet_pq_map.items():
+    today_path = None
+    for date_str, pq_path in date_path_list:
+        if date_str == today:
+            today_path = pq_path
+            break
+    if today_path is None:
+        continue
+    df_today = pd.read_parquet(today_path)
+    calc_for_date(df_today, sheet_name, today)
+
+# （2）如果需要跑历史，再算历史（不含今天）
+if run_history:
+    for sheet_name, date_path_list in sheet_pq_map.items():
+        for date_str, pq_path in date_path_list:
+            if date_str == today:
+                continue
+            df = pd.read_parquet(pq_path)
+            calc_for_date(df, sheet_name, date_str, tag_set=changed_or_new_tags)
+
+# 6.3 删除这些新增/变更 tag 在对应 sheet 的旧记录（不含今天）
+if run_history:
+    history = [
+        h for h in history
+        if not (
             h.get("path_url") == str(path_url) and
-            h.get("date") == today and
-            h.get("sheet_name") == sheet_name and
-            h.get("tag") in {g["tag"] for g in filter_groups}
-    )
-]
+            h.get("tag") in changed_or_new_tags and
+            h.get("sheet_name") in target_sheets and
+            h.get("date") != today          # 保留今天的记录
+        )
+    ]
 
-history.extend(results)
-with open(output_file, 'w', encoding='utf-8') as f:
-    json.dump(history, f, ensure_ascii=False, indent=2)
+history.extend(fresh_records)
+json.dump(history, open(out_file, 'w', encoding='utf-8'),
+          ensure_ascii=False, indent=2)
 
-print(f'[SUCCEED] 已处理 {len(filter_groups)} 组条件（支持多选），结果已追加至 {output_file}')
+# ---------- 7. 更新 last_tags ----------
+new_tags = last_tags.copy()
+for g in filter_groups:
+    new_tags[tag_sig(g)] = True
+yaml.dump(new_tags, open(last_tags_file, 'w', encoding='utf-8'),
+          allow_unicode=True)
+
+print(f"[SUCCEED] 已输出 {len(fresh_records)} 条记录，结果已更新到 {out_file}")
