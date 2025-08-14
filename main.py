@@ -53,13 +53,36 @@ for sht in sheets_this_run:
     df_sheet.to_parquet(pq_file, index=False)
     print(f"[CACHE] 已更新 parquet：{pq_file}")
 
-# ---------- 4. 判断是否有新增/变更 tag ----------
+# ---------- 4. 判断是否有新增/变更/减少 tag ----------
 last_tags_file = BASE_DIR / 'config' / 'last_tags.yaml'
 last_tags = yaml.safe_load(open(last_tags_file, encoding='utf-8')) or {} \
             if last_tags_file.exists() else {}
 
-changed_or_new_tags = {g["tag"] for g in filter_groups if tag_sig(g) not in last_tags}
-run_history = bool(changed_or_new_tags)   # 是否需要跑历史
+current_sigs = {tag_sig(g) for g in filter_groups}
+changed_or_new_tags = {g["tag"] for g in filter_groups if tag_sig(g) not in last_tags} or \
+                      (last_tags.keys() - {tag_sig(g) for g in filter_groups} and {"__ANY__"})
+run_history = bool(changed_or_new_tags)
+
+# 4.x 处理 tag 减少
+# 读 last_tags.yaml，直接拿到上次所有的 tag 名
+previous_tags = set(last_tags.values()) if last_tags else set()
+present_tags= {g["tag"] for g in filter_groups}
+if len(previous_tags)> len(present_tags):
+    removed_tags = previous_tags - present_tags
+    if removed_tags:
+        print(f"[INFO] 检测到减少的 tag：{removed_tags}，将删除所有历史记录")
+        out_file = BASE_DIR / 'result' / 'filter_result.json'
+        if out_file.exists():
+            try:
+                history = json.load(open(out_file, encoding='utf-8'))
+                history = history if isinstance(history, list) else [history]
+            except json.JSONDecodeError:
+                history = []
+        else:
+            history = []
+        history = [h for h in history if h.get("tag") not in removed_tags]
+        json.dump(history, open(out_file, 'w', encoding='utf-8'),
+                  ensure_ascii=False, indent=2)
 if run_history:
     print("[INFO] 检测到新增/变更 tag，将补算历史日期")
 else:
@@ -161,10 +184,10 @@ json.dump(history, open(out_file, 'w', encoding='utf-8'),
           ensure_ascii=False, indent=2)
 
 # ---------- 7. 更新 last_tags ----------
-new_tags = last_tags.copy()
-for g in filter_groups:
-    new_tags[tag_sig(g)] = True
-yaml.dump(new_tags, open(last_tags_file, 'w', encoding='utf-8'),
-          allow_unicode=True)
+if changed_or_new_tags:
+    new_tags = {tag_sig(g): g["tag"] for g in filter_groups}  # 值写 tag 名
+    yaml.dump(new_tags,
+              open(last_tags_file, 'w', encoding='utf-8'),
+              allow_unicode=True)
 
 print(f"[SUCCEED] 已输出 {len(fresh_records)} 条记录，结果已更新到 {out_file}")
