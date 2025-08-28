@@ -78,10 +78,11 @@ run_history = bool(changed_or_new_tags)
 # 读 last_tags.yaml，直接拿到上次所有的 tag 名
 previous_tags = set(last_tags.values()) if last_tags else set()
 present_tags = {g["tag"] for g in filter_groups}
-if len(previous_tags) > len(present_tags):
-    removed_tags = previous_tags - present_tags
+if previous_tags is not None:
+    # 检查之前存在的标签是否在当前标签组合中缺失
+    removed_tags = [tag for tag in previous_tags if tag not in present_tags]
     if removed_tags:
-        print(f"[INFO] 检测到减少的 tag：{removed_tags}，将删除所有历史记录")
+        print(f"以下标签已缺失: {removed_tags}")
         out_file = BASE_DIR / 'result' / 'filter_result.json'
         if out_file.exists():
             try:
