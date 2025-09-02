@@ -17,7 +17,7 @@ graph_drawer.py 折线图绘制程序，暂时不可打包成单文件，需要�
 ## 依赖下载
 
 ```python
-pip install pandas pyyaml plotly python-calamine 
+pip install pandas pyyaml plotly python-calamine PyQtWebEngine
 ```
 
 
@@ -43,6 +43,8 @@ filter_groups:
       是否在职: ["是"]
       性别: ["女"]
 ```
+
+
 
 | 键            | 含义             | 类型   |
 | ------------- | ---------------- | ------ |
