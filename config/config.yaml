@@ -1,11 +1,6 @@
-path_url: "./示例文档.xlsx"
-sheet_name: "人员信息"
-filter_groups:
-  - tag: "已在职的男性员工"
-    conditions:
-      是否在职: ["是"]
-      性别: ["男"]
-  - tag: "已在职的女性员工"
-    conditions:
-      是否在职: ["是"]
-      性别: ["女"]
+path_url: "./我的南京项目进展.xlsx"
+sheet_name: "功能清单0814"
+track_key: "三级模块"
+track_key2: "二级模块"
+track_column: "状态（已上线/正在开发/未开发/日落）"
+filter_groups: []
