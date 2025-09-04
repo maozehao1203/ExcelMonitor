@@ -7,11 +7,6 @@ from data_collect_utils.path_helper import get_project_root
 
 def load_config():
     """按原main.py逻辑加载yaml并返回cfg字典"""
-    if getattr(sys, 'frozen', False):
-        BASE_DIR = Path(sys.executable).parent
-    else:
-        BASE_DIR = Path(__file__).parent
-
     config_name = 'config.yaml'
     general_group = 'general_group.yaml'
     filter_group_name = general_group
