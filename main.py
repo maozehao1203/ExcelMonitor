@@ -1,5 +1,5 @@
 from pathlib import Path
-from data_collect_utils.config_loader import load_config
+from data_collect_utils import config_loader
 from data_collect_utils.cache_manager import CacheManager
 from data_collect_utils.tag_manager import TagManager
 from data_collect_utils.filter_engine import FilterEngine
@@ -7,7 +7,7 @@ from data_collect_utils.utils import diff_rows_and_save, update_last_tags
 
 
 def main():
-    cfg = load_config()
+    cfg = config_loader.load_config()
     cache = CacheManager(cfg)
     cache.process_cache()
 

@@ -71,23 +71,23 @@ def _build_table():
 # -------------------------------------------------
 # 4. 主函数：拼装所有子图
 # -------------------------------------------------
-def build_figure(df):
+def build_figure(data_frame):
     today = pd.Timestamp('today').normalize()
-    prev = df[df['date'] < today]['date'].max()
-    prev_df = df[df['date'] == prev].set_index('tag')['matched_count']
+    prev = data_frame[data_frame['date'] < today]['date'].max()
+    prev_df = data_frame[data_frame['date'] == prev].set_index('tag')['matched_count']
     delta = {
-        t: df[df['date'] == today].set_index('tag').loc[t, 'matched_count'] - prev_df.get(t, 0)
-        for t in df[df['date'] == today]['tag']
+        t: data_frame[data_frame['date'] == today].set_index('tag').loc[t, 'matched_count'] - prev_df.get(t, 0)
+        for t in data_frame[data_frame['date'] == today]['tag']
     }
 
     # 1. 折线图
-    line_fig = _build_line(df, today, prev_df, delta)
+    line_fig = _build_line(data_frame, today, prev_df, delta)
 
     # 2. 饼图数据
-    pie_df = _build_pie(df, today)
+    pie_df = _build_pie(data_frame, today)
 
     # 3. 合计信息
-    today_count_df = df[df['date'] == today].groupby('tag', as_index=False)['matched_count'].sum()
+    today_count_df = data_frame[data_frame['date'] == today].groupby('tag', as_index=False)['matched_count'].sum()
     today_total = int(today_count_df['matched_count'].sum())
     update_time = datetime.now().replace(second=0, microsecond=0).strftime('%Y-%m-%d %H:%M')
     prev_total = int(prev_df.sum())
@@ -105,7 +105,7 @@ def build_figure(df):
         specs=[[{"type": "scatter"}], [{"type": "table"}], [{"type": "pie"}]],
         subplot_titles=['匹配数量随日期变化', '今日变化', '今日各标签数量'],
         vertical_spacing=0.1,
-        row_heights=[0.4, 0.2, 0.4]
+        row_heights=[0.4, 0.6, 0.4]
     )
 
     # 折线图
@@ -132,9 +132,9 @@ def build_figure(df):
     # 顶部注释
     fig2.add_annotation(
         text=f"于{update_time}更新，今日合计：<b>{today_total}</b> 条（较昨日 <span style='color:{delta_color};'>{delta_str}</span>）",
-        x=0.5, y=1.08, xref="paper", yref="paper",
+        x=0.5, y=1.04, xref="paper", yref="paper",
         showarrow=False, font=dict(size=16)
     )
 
-    fig2.update_layout(height=1300)
+    fig2.update_layout(height=1700)
     return fig2

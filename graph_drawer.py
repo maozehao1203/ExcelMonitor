@@ -3,6 +3,6 @@ from graph_draw_utils.html_writer import write_html
 from graph_draw_utils.plot_generator import build_figure
 
 if __name__ == "__main__":
-    df = load_data()
-    fig = build_figure(df)
+    data_frame = load_data()
+    fig = build_figure(data_frame)
     write_html(fig)

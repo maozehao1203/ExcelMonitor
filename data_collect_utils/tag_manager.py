@@ -1,7 +1,7 @@
 import yaml
 import json
 import hashlib
-from pathlib import Path
+
 
 class TagManager:
     def __init__(self, cfg):
